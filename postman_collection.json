@@ -1,0 +1,386 @@
+{
+  "info": {
+    "name": "Inventory Management API Workshop",
+    "description": "Requests for the inventory-api workshop project.\n\n1. Start the API with `npm run dev`.\n2. Run the requests **in order** (1 to 8). Request 2 saves the new product's ID in the `productId` collection variable, which requests 4, 5 and 6 use.\n3. If your API runs on a different port, change the `baseUrl` collection variable.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Health Check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Status is ok', function () {",
+              "    pm.expect(pm.response.json().status).to.eql('ok');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Checks that the API is running. Expected: **200 OK** with `{\"status\": \"ok\", ...}`."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Create Product",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "const product = pm.response.json();",
+              "",
+              "pm.test('Response contains the new product', function () {",
+              "    pm.expect(product).to.have.property('product_id');",
+              "    pm.expect(product.name).to.eql('HP Laptop');",
+              "    pm.expect(product.price).to.eql(450000);",
+              "    pm.expect(product.quantity).to.eql(10);",
+              "});",
+              "",
+              "// Save the new product's ID for the next requests.",
+              "if (product.product_id) {",
+              "    pm.collectionVariables.set('productId', product.product_id);",
+              "    console.log('Saved productId = ' + product.product_id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/products",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "products"
+          ]
+        },
+        "description": "Creates a new product with `INSERT INTO products ... RETURNING *`.\n\nExpected: **201 Created** with the new product.\n\nThe test script saves the new `product_id` into the collection variable `productId`, so requests 4, 5 and 6 automatically use it.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"HP Laptop\",\n  \"price\": 450000,\n  \"quantity\": 10\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get All Products",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Response is an array', function () {",
+              "    pm.expect(pm.response.json()).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/products",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "products"
+          ]
+        },
+        "description": "Returns every product, ordered by `product_id`. Expected: **200 OK** with a JSON array (an empty array `[]` if there are no products)."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Get Product By ID",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// If you have not run \"2. Create Product\" yet, productId is empty.",
+              "if (!pm.collectionVariables.get('productId')) {",
+              "    console.warn('productId is empty. Run \"2. Create Product\" first.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Returned the requested product', function () {",
+              "    pm.expect(String(pm.response.json().product_id)).to.eql(String(pm.collectionVariables.get('productId')));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/products/{{productId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "products",
+            "{{productId}}"
+          ]
+        },
+        "description": "Returns one product using `WHERE product_id = $1`. Uses the `productId` saved by **2. Create Product**.\n\nExpected: **200 OK**."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Update Product",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// If you have not run \"2. Create Product\" yet, productId is empty.",
+              "if (!pm.collectionVariables.get('productId')) {",
+              "    console.warn('productId is empty. Run \"2. Create Product\" first.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Product was updated', function () {",
+              "    const product = pm.response.json();",
+              "    pm.expect(product.name).to.eql('HP Laptop 15 (Updated)');",
+              "    pm.expect(product.price).to.eql(430000);",
+              "    pm.expect(product.quantity).to.eql(8);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/products/{{productId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "products",
+            "{{productId}}"
+          ]
+        },
+        "description": "Fully updates a product (name, price **and** quantity are all required). Also sets `updated_at` to the current time.\n\nExpected: **200 OK** with the updated product.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"HP Laptop 15 (Updated)\",\n  \"price\": 430000,\n  \"quantity\": 8\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6. Delete Product",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// If you have not run \"2. Create Product\" yet, productId is empty.",
+              "if (!pm.collectionVariables.get('productId')) {",
+              "    console.warn('productId is empty. Run \"2. Create Product\" first.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Response has a message and the deleted product', function () {",
+              "    const body = pm.response.json();",
+              "    pm.expect(body).to.have.property('message');",
+              "    pm.expect(body).to.have.property('product');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/products/{{productId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "products",
+            "{{productId}}"
+          ]
+        },
+        "description": "Deletes the product with `DELETE ... RETURNING *`.\n\nExpected: **200 OK** with a message and the deleted product. Sending this request a second time returns **404**, because the product no longer exists."
+      },
+      "response": []
+    },
+    {
+      "name": "7. Invalid Product ID",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400', function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "pm.test('Response has an error message', function () {",
+              "    pm.expect(pm.response.json()).to.have.property('error');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/products/abc",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "products",
+            "abc"
+          ]
+        },
+        "description": "`abc` is not a positive whole number, so the API rejects it before running any SQL.\n\nExpected: **400 Bad Request**."
+      },
+      "response": []
+    },
+    {
+      "name": "8. Non-existent Product",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 404', function () {",
+              "    pm.response.to.have.status(404);",
+              "});",
+              "pm.test('Response has an error message', function () {",
+              "    pm.expect(pm.response.json()).to.have.property('error');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/products/999999",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "products",
+            "999999"
+          ]
+        },
+        "description": "The ID is valid, but no product has this ID.\n\nExpected: **404 Not Found**."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "productId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

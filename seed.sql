@@ -1,15 +1,3 @@
--- =============================================================
--- seed.sql
--- Inserts five sample products into the "products" table.
---
--- Run schema.sql FIRST, then run this script while connected
--- to the "InventoryDB" database.
---
--- This script is safe to run more than once. Each sample product
--- is only inserted if a product with the same name does NOT
--- already exist, so running it again will not create duplicates.
--- =============================================================
-
 INSERT INTO products (name, price, quantity)
 SELECT sample.name, sample.price, sample.quantity
 FROM (
@@ -25,9 +13,6 @@ WHERE NOT EXISTS (
     FROM products
     WHERE products.name = sample.name
 )
--- Insert in the order listed above, so product IDs are predictable
--- on a fresh table (HP Laptop gets product_id 1, and so on).
 ORDER BY sample.sort_order;
 
--- Show what is now in the table.
 SELECT * FROM products ORDER BY product_id ASC;

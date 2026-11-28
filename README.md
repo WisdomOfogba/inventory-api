@@ -50,9 +50,20 @@ It uses **raw SQL** (no ORM such as Prisma or Sequelize), so you can see exactly
 inventory-api/
 │
 ├── src/
-│   ├── server.ts         # Starts the Express app, registers routes, checks the database
-│   ├── db.ts             # Creates the shared PostgreSQL connection pool
-│   └── products.ts       # All product routes (CRUD) and their SQL queries
+│   ├── config/
+│   │   └── db.ts                 # Loads .env and creates the shared PostgreSQL connection pool
+│   ├── controllers/
+│   │   └── productController.ts  # Handles each request: validates input, calls the model, sends the response
+│   ├── middleware/
+│   │   └── errorHandler.ts       # 404 for unknown routes, 400 for invalid JSON, 500 for unexpected errors
+│   ├── models/
+│   │   └── productModel.ts       # All SQL queries for the products table
+│   ├── routes/
+│   │   └── productRoutes.ts      # Maps URLs + HTTP methods to controller functions
+│   ├── utils/
+│   │   └── validation.ts         # Checks product IDs and request bodies
+│   ├── app.ts                    # Creates the Express app and registers routes and middleware
+│   └── server.ts                 # Entry point: checks the database, then starts listening
 │
 ├── .env.example          # Template for your .env file (no real password!)
 ├── .gitignore            # Files Git should ignore (node_modules, dist, .env ...)
@@ -64,6 +75,21 @@ inventory-api/
 ├── postman_collection.json  # Ready-made Postman requests
 └── README.md             # This file
 ```
+
+Each folder has one job:
+
+| Folder / file | Responsibility |
+|---------------|----------------|
+| `config/` | Configuration and connections, here the database pool |
+| `routes/` | Which function handles which URL and HTTP method |
+| `controllers/` | The HTTP side: read the request, validate it, choose the status code, send JSON |
+| `models/` | The database side: run SQL with `pool.query()` and return rows |
+| `middleware/` | Functions Express runs for every request, such as error handling |
+| `utils/` | Small helper functions, here input validation |
+| `app.ts` | Builds the Express app (no network or database startup) |
+| `server.ts` | Starts everything: checks the database, then calls `app.listen()` |
+
+Keeping these apart means SQL is only ever written in `models/`, and HTTP details only ever appear in `controllers/`.
 
 When you run `npm run build`, TypeScript creates a `dist/` folder with the compiled JavaScript. You never edit `dist/` by hand, and it is not committed to Git.
 
@@ -439,7 +465,7 @@ Every error uses the same JSON shape:
 
 ### A note about `price`
 
-PostgreSQL `NUMERIC` values are normally returned by the `pg` driver as **strings** (e.g. `"450000.00"`) to avoid losing precision. In `src/db.ts` we tell `pg` to convert them into JavaScript numbers, so the API returns `"price": 450000`. This keeps the workshop simple. Real financial systems usually keep money values as strings or use a decimal library, because JavaScript numbers are floating point.
+PostgreSQL `NUMERIC` values are normally returned by the `pg` driver as **strings** (e.g. `"450000.00"`) to avoid losing precision. In `src/config/db.ts` we tell `pg` to convert them into JavaScript numbers, so the API returns `"price": 450000`. This keeps the workshop simple. Real financial systems usually keep money values as strings or use a decimal library, because JavaScript numbers are floating point.
 
 ---
 
@@ -564,36 +590,45 @@ These rules live **in the database**, so the data stays correct even if someone 
 
 ## 16. Learning Notes
 
-### How the three TypeScript files work together
+### How the files work together
+
+Follow a request such as `GET /api/products/1` through the project:
 
 ```
  Postman / Browser
-        │  HTTP request (e.g. GET /api/products/1)
+        │  GET /api/products/1
         ▼
- ┌──────────────┐   app.use('/api/products', productsRouter)
- │  server.ts   │ ─────────────────────────────────────────────┐
- └──────────────┘                                              ▼
-   - creates the Express app                           ┌───────────────┐
-   - parses JSON bodies                                │  products.ts  │
-   - /health route                                     └───────────────┘
-   - checks the DB, then starts listening                - validates input
-                                                         - runs SQL with pool.query()
-                                                         - sends JSON + status code
-                                                               │
-                                                               ▼
-                                                       ┌───────────────┐
-                                                       │     db.ts     │
-                                                       └───────────────┘
-                                                         - loads .env
-                                                         - creates ONE connection pool
-                                                               │
-                                                               ▼
-                                                         PostgreSQL (InventoryDB)
+ server.ts ──────────── checked the database at startup, then started app.listen()
+        │
+        ▼
+ app.ts ─────────────── express.json(), then app.use('/api/products', productRoutes)
+        │
+        ▼
+ routes/productRoutes.ts ── router.get('/:id', getProductById)
+        │
+        ▼
+ controllers/productController.ts
+        │   1. parseProductId('1')            (utils/validation.ts)  -> 400 if invalid
+        │   2. ProductModel.findProductById(1)
+        │   3. 404 if null, otherwise 200 + JSON
+        ▼
+ models/productModel.ts ── pool.query('SELECT * FROM products WHERE product_id = $1', [1])
+        │
+        ▼
+ config/db.ts ───────── the shared connection pool
+        │
+        ▼
+ PostgreSQL (InventoryDB)
 ```
 
-1. **`db.ts`** loads `.env`, reads `DATABASE_URL` and creates a single shared connection pool. It exports `pool` and a `checkDatabaseConnection()` function.
-2. **`products.ts`** imports `pool` and defines the five CRUD routes. Each route validates the input, runs one SQL query and sends back JSON with a status code.
-3. **`server.ts`** creates the Express app, turns on JSON parsing, adds `/health`, connects the products router at `/api/products`, checks the database connection and only then starts listening on the port.
+1. **`config/db.ts`** loads `.env`, reads `DATABASE_URL` and creates a single shared connection pool. It exports `pool` and a `checkDatabaseConnection()` function.
+2. **`models/productModel.ts`** imports `pool` and contains one function per SQL query (`findAllProducts`, `findProductById`, `createProduct`, `updateProduct`, `deleteProduct`). It knows nothing about HTTP.
+3. **`utils/validation.ts`** checks that an ID is a positive whole number and that a request body has a valid `name`, `price` and `quantity`.
+4. **`controllers/productController.ts`** handles each request: it validates the input, calls the model, and sends JSON with the right status code. Each database call is wrapped in `try/catch`, so failures return a `500`.
+5. **`routes/productRoutes.ts`** connects each HTTP method and path to its controller function.
+6. **`middleware/errorHandler.ts`** returns `404` for unknown URLs, `400` for invalid JSON, and `500` for anything unexpected.
+7. **`app.ts`** creates the Express app, turns on JSON parsing, adds `/health`, mounts the product routes at `/api/products` and adds the error middleware.
+8. **`server.ts`** is the entry point. It checks the database connection and only then starts listening on the port.
 
 ### What is a connection pool?
 
@@ -601,7 +636,7 @@ Opening a new database connection is slow: the client has to connect over the ne
 
 Without a pool, 100 requests would open 100 connections. With our pool (`max: 10`), at most 10 connections are used and reused. This is faster, and it protects PostgreSQL from too many connections.
 
-That is why `db.ts` creates the pool **once**, and every route imports the same `pool`.
+That is why `config/db.ts` creates the pool **once**, and the model imports that same `pool`.
 
 ### What does `pool.query()` do?
 
@@ -655,7 +690,7 @@ The database would run **both** statements and delete the whole table.
 
 With a parameterized query, PostgreSQL treats the entire input as one value. It would just look for a product whose ID equals that strange text, and nothing dangerous happens. In this project, if someone creates a product with the name `x'); DROP TABLE products; --`, it is simply stored as a product called `x'); DROP TABLE products; --`.
 
-**Rule:** every value that comes from a user (URL, body, query string) must go through a placeholder. Every query in `src/products.ts` follows this rule.
+**Rule:** every value that comes from a user (URL, body, query string) must go through a placeholder. Every query in `src/models/productModel.ts` follows this rule.
 
 ### How CRUD maps to HTTP methods and SQL
 
